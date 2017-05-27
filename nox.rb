@@ -1,31 +1,25 @@
 #!/usr/bin/env ruby
 # encoding: UTF-8
 
-require 'nokogiri'
 require 'openssl'
 require 'open-uri'
-require 'open_uri_redirections'
+
+%w{nokogiri open_uri_redirections}.each do |lib|
+    begin
+        require lib
+    rescue LoadError
+        system "gem install #{lib}"
+        Gem.clear_paths
+        retry
+    end
+end
 
 =begin
-My own personal web scraper, for the sole purpose of downloading images dinamically
 
-# TODO: exlude by file size
-# TODO: exlude by image dimension
-# TODO: skip if filename already exists in folder
+TODO: exlude by file size
+TODO: exlude by image dimension
+TODO: skip if filename already exists in folder
 
-## Examples
-
-# imageboards
-    $ ruby reaper.rb https://imageboard-url/board/thread/ wallpaper -e=png
-
-# imgur
-    $ ruby reaper.rb https://imgur.com/gallery/nHLVf <wallpaper>
-
-# Options
-    -h, --help              Shows help
-    -s, --sort              Sort files in increasing order
-    -f, --folder            Specify folder (data)
-    -ignore, --ignore       Ignore specific file extension
 =end
 
 system "title nox"
@@ -118,7 +112,7 @@ catch :ctrl_c do
             fetch.nil? ? (puts "Could not bypass protection :(") : (URL = fetch; retry)
             puts fetch
         end
-    rescue Exception
+    rescue 
         warn "Bypassing SSL verification...".red
         OpenSSL::SSL::VERIFY_PEER = OpenSSL::SSL::VERIFY_NONE
         retry
