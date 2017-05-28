@@ -1,5 +1,5 @@
 # nox
-multithreaded imageboard web crawler
+lightweight script to download imageboard files
 
 `$ ruby nox.rb <url>,<url> <folder> <options>`
 
