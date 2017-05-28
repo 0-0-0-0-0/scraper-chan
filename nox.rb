@@ -3,8 +3,9 @@
 
 require 'openssl'
 require 'open-uri'
+require 'net/http'
 
-%w{nokogiri open_uri_redirections}.each do |lib|
+%w{nokogiri open_uri_redirections progress_bar}.each do |lib|
     begin
         require lib
     rescue LoadError
@@ -18,6 +19,7 @@ end
 
 TODO: exlude by file size
 TODO: exlude by image dimension
+TODO: add --watch flag to watch for changes on the thread
 TODO: skip if filename already exists in folder
 
 =end
@@ -29,6 +31,18 @@ class String
     def blue;           "\e[34m#{self}\e[0m" end
     def green;          "\e[32m#{self}\e[0m" end
     def purple;         "\e[35m#{self}\e[0m" end
+end
+
+class Integer
+    def to_filesize
+        {
+            'B'  => 1024,
+            'KB' => 1024 * 1024,
+            'MB' => 1024 * 1024 * 1024,
+            'GB' => 1024 * 1024 * 1024 * 1024,
+            'TB' => 1024 * 1024 * 1024 * 1024 * 1024
+        }.each_pair { |e, s| return "#{(self.to_f / (s / 1024)).round(2)}#{e}" if self < s }
+    end
 end
 
 puts %{
@@ -52,7 +66,7 @@ end
 # get input, create folder 'data' if not specified
 BEGIN { require 'fileutils'
         FileUtils::mkdir_p ENV['folder'] = (ARGV[1].nil? ? 'data' : ARGV[1].to_s);
-        ARGV[0].nil? ? (puts "type --help") : (URL = ARGV[0].split(','));
+        ARGV[0].nil? ? (abort "type --help") : (URL = ARGV[0].split(','));
         URL =~ /^(?<http>!.*http|https:\/\/).*$/i ? $~[:http] += $` : nil }
 
 # --sort, -p: files numerically in increasing order
@@ -82,27 +96,41 @@ ignore if ARGS[:ignore]
 
 trap("SIGINT") { throw :ctrl_c }
 
-catch :ctrl_c do
+connected = false
+retries = 0
+
+catch :ctrl_c do  
     puts "Connecting to URL.. ".green
     puts "Press ctrl-c to stop".green
     begin
         URL.map do |url|
             Thread.new do
-                Nokogiri::HTML(open(URI.encode(url),
+            doc = Nokogiri::HTML(open(URI.encode(url),
                 "User-Agent" => "Ruby/#{RUBY_VERSION}",
                 :ssl_verify_mode => OpenSSL::SSL::VERIFY_NONE,
                 :allow_redirections => :all)). \
                 xpath("//a[@class='fileThumb']",
-                      "//p[@class='fileinfo']/a",
-                      "//a[@class='imgLink']",
-                      "//td[@class='reply']/a[3]",
-                      "//div[@class='post_content_inner']/div",
-                      "//div[@class='post-image']/a"). \
+                    "//p[@class='fileinfo']/a",
+                    "//a[@class='imgLink']",
+                    "//td[@class='reply']/a[3]",
+                    "//div[@class='post_content_inner']/div",
+                    "//div[@class='post-image']/a"). \
                     each_with_index do |data, i|
+
                     uri = URI.join(url, URI.escape((data['href'] || data['src']))).to_s
-                    puts "[#{(i+=1).to_s.blue}/#{uri.length.to_s.blue}#{" - #{Thread.current}" if URL.size > 1}]" \
-                          "[#{File.basename(uri).to_s.blue}] ► #{__dir__ + "/" + ENV['folder']}"
-                    File.open(ENV['folder'] + File::SEPARATOR + File.basename(uri), 'wb') { |f| f.write(open(uri).read) }
+                    bar = ProgressBar.new(uri.size, :bar, :eta)
+                    response = Net::HTTP.get_response(URI.parse(uri))
+                    
+                    puts "[#{(i+=1).to_s.blue}/#{uri.length.to_s.blue}" \
+                        "#{" - #{Thread.current}" if URL.size > 1}] [#{File.basename(uri).to_s.blue}] [#{(response['content-length'].to_i.to_filesize).to_s.green}/#{response['content-type']}] " \
+                        "-> #{__dir__ + "/" + (ENV['folder']).to_s.blue}"
+
+                    connected = true
+
+                    File.open(ENV['folder'] + File::SEPARATOR + File.basename(uri), 'wb') do |f|
+                        (uri.size).times { sleep 0.1; bar.increment! }
+                        f.write(open(uri).read); next if File.exists?(f)
+                    end
                 end
             end
         end.each(&:join)
@@ -118,8 +146,12 @@ catch :ctrl_c do
         puts e
         warn "Bypassing SSL verification...".red
         OpenSSL::SSL::VERIFY_PEER = OpenSSL::SSL::VERIFY_NONE
-        retry
+        retries += 1
+        retry if retries <= 2
     end
+    raise "Couldn't connect to the URL :(" unless connected
 end
 
-at_exit { $! ? (warn "Oops, something happened :(") : (abort "The folder #{ENV['folder']} now has: #{Dir["#{ENV['folder']}/*"].length} files.") }
+at_exit { $! ? (warn "Oops, something happened :(") \
+        : (connected ? (abort "The folder #{ENV['folder']} now has: #{Dir["#{ENV['folder']}/*"].length} files.") \
+        : (abort "Unknown error, type --help.")) }
