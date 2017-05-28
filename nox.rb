@@ -83,10 +83,12 @@ ignore if ARGS[:ignore]
 trap("SIGINT") { throw :ctrl_c }
 
 catch :ctrl_c do
+    puts "Connecting to URL.. ".green
+    puts "Press ctrl-c to stop".green
     begin
         URL.map do |url|
             Thread.new do
-                Nokogiri::HTML(open(url,
+                Nokogiri::HTML(open(URI.encode(url),
                 "User-Agent" => "Ruby/#{RUBY_VERSION}",
                 :ssl_verify_mode => OpenSSL::SSL::VERIFY_NONE,
                 :allow_redirections => :all)). \
@@ -97,8 +99,8 @@ catch :ctrl_c do
                       "//div[@class='post_content_inner']/div",
                       "//div[@class='post-image']/a"). \
                     each_with_index do |data, i|
-                    uri = URI.join(url, (data['href'] || data['src'] || data.text.gsub(/\_\d+/m, '_1280'))).to_s
-                    puts "[#{(i+=1).to_s.blue}/#{uri.length.blue}#{" - #{Thread.current}" if URL.size > 1}]" \
+                    uri = URI.join(url, URI.escape((data['href'] || data['src']))).to_s
+                    puts "[#{(i+=1).to_s.blue}/#{uri.length.to_s.blue}#{" - #{Thread.current}" if URL.size > 1}]" \
                           "[#{File.basename(uri).to_s.blue}] ► #{__dir__ + "/" + ENV['folder']}"
                     File.open(ENV['folder'] + File::SEPARATOR + File.basename(uri), 'wb') { |f| f.write(open(uri).read) }
                 end
@@ -112,7 +114,8 @@ catch :ctrl_c do
             fetch.nil? ? (puts "Could not bypass protection :(") : (URL = fetch; retry)
             puts fetch
         end
-    rescue 
+    rescue Exception => e
+        puts e
         warn "Bypassing SSL verification...".red
         OpenSSL::SSL::VERIFY_PEER = OpenSSL::SSL::VERIFY_NONE
         retry
