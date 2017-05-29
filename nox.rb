@@ -4,8 +4,9 @@
 require 'openssl'
 require 'open-uri'
 require 'net/http'
+require 'timeout'
 
-%w{nokogiri open_uri_redirections progress_bar}.each do |lib|
+%w{nokogiri open_uri_redirections progressbar}.each do |lib|
     begin
         require lib
     rescue LoadError
@@ -97,39 +98,55 @@ ignore if ARGS[:ignore]
 trap("SIGINT") { throw :ctrl_c }
 
 connected = false
+downloaded = 0
 retries = 0
 
 catch :ctrl_c do  
+
     puts "Connecting to URL.. ".green
     puts "Press ctrl-c to stop".green
+    puts "\n\n"
+
     begin
         URL.map do |url|
             Thread.new do
-            doc = Nokogiri::HTML(open(URI.encode(url),
-                "User-Agent" => "Ruby/#{RUBY_VERSION}",
-                :ssl_verify_mode => OpenSSL::SSL::VERIFY_NONE,
-                :allow_redirections => :all)). \
-                xpath("//a[@class='fileThumb']",
+                document = Nokogiri::HTML(open(URI.encode(url),
+                    "User-Agent" => "Ruby/#{RUBY_VERSION}", 
+                    :ssl_verify_mode => OpenSSL::SSL::VERIFY_NONE, 
+                    :allow_redirections => :all)).xpath(
+                    "//a[@class='fileThumb']",
                     "//p[@class='fileinfo']/a",
                     "//a[@class='imgLink']",
                     "//td[@class='reply']/a[3]",
                     "//div[@class='post_content_inner']/div",
-                    "//div[@class='post-image']/a"). \
-                    each_with_index do |data, i|
+                    "//div[@class='post-image']/a")
 
-                    uri = URI.join(url, URI.escape((data['href'] || data['src']))).to_s
-                    bar = ProgressBar.new(uri.size, :bar, :eta)
-                    response = Net::HTTP.get_response(URI.parse(uri))
-                    
-                    puts "[#{(i+=1).to_s.blue}/#{uri.length.to_s.blue}" \
-                        "#{" - #{Thread.current}" if URL.size > 1}] [#{File.basename(uri).to_s.blue}] [#{(response['content-length'].to_i.to_filesize).to_s.green}/#{response['content-type']}] " \
-                        "-> #{__dir__ + "/" + (ENV['folder']).to_s.blue}"
+                document.each_with_index do |data, i|
 
-                    connected = true
+                    uri         = URI.join(url, URI.escape((data['href'] || data['src']))).to_s
+                    response    = Net::HTTP.get_response(URI.parse(uri))
+                    connected   = true
+                    progressbar = ProgressBar.create(
+                    :format         => "%a %b\u{15E7}%i %p%% %t",
+                    :progress_mark  => ' ',
+                    :remainder_mark => "\u{FF65}")
 
-                    File.open(ENV['folder'] + File::SEPARATOR + File.basename(uri), 'wb') do |f|
-                        (uri.size).times { sleep 0.1; bar.increment! }
-                        f.write(open(uri).read); next if File.exists?(f)
+                    puts "[#{(i+=1).to_s.blue}/#{document.length.to_s.blue}" \
+                         "#{" - #{Thread.current}" if URL.size > 1}] " \
+                         "[#{(response['content-length'].to_i.to_filesize).to_s.green}/#{response['content-type']}] " \
+                         "[#{File.basename(uri).to_s.blue}] " \
+                         "-> #{__dir__ + "/" + (ENV['folder']).to_s.blue}"
+                    begin
+                        Timeout::timeout(60) do
+                            File.open(ENV['folder'] + File::SEPARATOR + File.basename(uri), 'wb') do |f|
+                                f.write(open(uri).read)
+                                100.times {progressbar.increment; sleep 0.05}
+                                next if File.file?(f)
+                                downloaded += 1
+                            end
+                        end
+                    rescue TimeoutError
+                        puts "¯\\_(ツ)_/¯ shitty internet speed or very large file".red
                     end
                 end
             end
@@ -153,5 +170,5 @@ catch :ctrl_c do
 end
 
 at_exit { $! ? (warn "Oops, something happened :(") \
-        : (connected ? (abort "The folder #{ENV['folder']} now has: #{Dir["#{ENV['folder']}/*"].length} files.") \
+        : (connected ? (abort "Downloaded: #{downloaded} files.\n" + ("The folder #{ENV['folder']} now has: #{file_count = Dir["#{ENV['folder']}/*"].length} files." unless downloaded == file_count)) \
         : (abort "Unknown error, type --help.")) }
