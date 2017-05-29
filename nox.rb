@@ -99,6 +99,7 @@ connected = false
 time = Time.now
 downloaded = 0
 retries = 0
+dl_size = []
 
 trap("SIGINT") { throw :ctrl_c }
 
@@ -128,6 +129,7 @@ catch :ctrl_c do
                     response    = Net::HTTP.get_response(URI.parse(uri))
                     connected   = true
                     downloaded += 1
+                    dl_size    << response['content-length'].to_i
                     progressbar = ProgressBar.create(
                     :format         => "%a %b\u{15E7}%i %p%% %t",
                     :progress_mark  => ' ',
@@ -140,10 +142,10 @@ catch :ctrl_c do
                          "-> #{__dir__ + "/" + (ENV['folder']).to_s.blue}"
 
                     begin
-                        Timeout::timeout(60) do
+                        Timeout::timeout(120) do
                             File.open(ENV['folder'] + File::SEPARATOR + File.basename(uri), 'wb') do |f|
                                 f.write(open(uri).read)
-                                100.times {progressbar.increment; sleep 0.05}
+                                100.times {progressbar.increment; sleep 0.005}
                                 next if File.file?(f)
                             end
                         end
@@ -172,6 +174,6 @@ catch :ctrl_c do
 end
 
 at_exit { $! ? (warn "Oops, something happened :(") \
-        : (connected ? (abort "It took #{time - Time.now}s to complete.\nDownloaded: #{downloaded} files.\n" \
-        + ("The folder #{ENV['folder']} now has: #{file_count = Dir["#{ENV['folder']}/*"].length} files." unless downloaded == file_count)) \
+        : (connected ? (puts "\n=TOTAL=\n"; puts "Downloaded: " + (dl_size.inject(:+).to_filesize).to_s.green + " (#{downloaded} files)";
+        puts "Folder (#{ENV['folder']}) size: " + (file_count = Dir["#{ENV['folder']}/*"].length).to_s unless downloaded == file_count) \
         : (abort "Unknown error, type --help.")) }
