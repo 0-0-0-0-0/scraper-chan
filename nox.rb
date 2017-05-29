@@ -67,7 +67,7 @@ end
 # get input, create folder 'data' if not specified
 BEGIN { require 'fileutils'
         FileUtils::mkdir_p ENV['folder'] = (ARGV[1].nil? ? 'data' : ARGV[1].to_s);
-        ARGV[0].nil? ? (abort "type --help") : (URL = ARGV[0].split(','));
+        ARGV[0].nil? ? (print "URL => "; URL = gets.chop.split(',')) : (URL = ARGV[0].split(','));
         URL =~ /^(?<http>!.*http|https:\/\/).*$/i ? $~[:http] += $` : nil }
 
 # --sort, -p: files numerically in increasing order
@@ -95,11 +95,12 @@ help   if ARGS[:help]
 sort   if ARGS[:sort]
 ignore if ARGS[:ignore]
 
-trap("SIGINT") { throw :ctrl_c }
-
 connected = false
+time = Time.now
 downloaded = 0
 retries = 0
+
+trap("SIGINT") { throw :ctrl_c }
 
 catch :ctrl_c do  
 
@@ -171,5 +172,6 @@ catch :ctrl_c do
 end
 
 at_exit { $! ? (warn "Oops, something happened :(") \
-        : (connected ? (abort "Downloaded: #{downloaded} files.\n" + ("The folder #{ENV['folder']} now has: #{file_count = Dir["#{ENV['folder']}/*"].length} files." unless downloaded == file_count)) \
+        : (connected ? (abort "It took #{time - Time.now}s to complete.\nDownloaded: #{downloaded} files.\n" \
+        + ("The folder #{ENV['folder']} now has: #{file_count = Dir["#{ENV['folder']}/*"].length} files." unless downloaded == file_count)) \
         : (abort "Unknown error, type --help.")) }
