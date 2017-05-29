@@ -126,6 +126,7 @@ catch :ctrl_c do
                     uri         = URI.join(url, URI.escape((data['href'] || data['src']))).to_s
                     response    = Net::HTTP.get_response(URI.parse(uri))
                     connected   = true
+                    downloaded += 1
                     progressbar = ProgressBar.create(
                     :format         => "%a %b\u{15E7}%i %p%% %t",
                     :progress_mark  => ' ',
@@ -136,13 +137,13 @@ catch :ctrl_c do
                          "[#{(response['content-length'].to_i.to_filesize).to_s.green}/#{response['content-type']}] " \
                          "[#{File.basename(uri).to_s.blue}] " \
                          "-> #{__dir__ + "/" + (ENV['folder']).to_s.blue}"
+
                     begin
                         Timeout::timeout(60) do
                             File.open(ENV['folder'] + File::SEPARATOR + File.basename(uri), 'wb') do |f|
                                 f.write(open(uri).read)
                                 100.times {progressbar.increment; sleep 0.05}
                                 next if File.file?(f)
-                                downloaded += 1
                             end
                         end
                     rescue TimeoutError
