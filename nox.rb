@@ -1,6 +1,15 @@
 #!/usr/bin/env ruby
 # encoding: UTF-8
 
+=begin
+
+TODO: exlude by file size
+TODO: exlude by image dimension
+TODO: add --watch flag to watch for changes on the thread
+TODO: fix progressbar
+
+=end
+
 require 'openssl'
 require 'open-uri'
 require 'net/http'
@@ -16,23 +25,36 @@ require 'timeout'
     end
 end
 
-=begin
+BEGIN {
+    require 'fileutils'
 
-TODO: exlude by file size
-TODO: exlude by image dimension
-TODO: add --watch flag to watch for changes on the thread
-TODO: skip if filename already exists in folder
+    system "title nox"
 
-=end
+    class String
+        def red;            "\e[31m#{self}\e[0m" end
+        def blue;           "\e[34m#{self}\e[0m" end
+        def green;          "\e[32m#{self}\e[0m" end
+        def purple;         "\e[35m#{self}\e[0m" end
+    end
 
-system "title nox"
+    puts %{
+            ███╗   ██╗ ██████╗ ██╗  ██╗
+            ████╗  ██║██╔═══██╗╚██╗██╔╝
+            ██╔██╗ ██║██║   ██║ ╚███╔╝ 
+            ██║╚██╗██║██║   ██║ ██╔██╗ 
+            ██║ ╚████║╚██████╔╝██╔╝ ██╗
+            ╚═╝  ╚═══╝ ╚═════╝ ╚═╝  ╚═╝
+    }.purple
 
-class String
-    def red;            "\e[31m#{self}\e[0m" end
-    def blue;           "\e[34m#{self}\e[0m" end
-    def green;          "\e[32m#{self}\e[0m" end
-    def purple;         "\e[35m#{self}\e[0m" end
-end
+    # get input, create folder 'data' if not specified
+    FileUtils::mkdir_p ENV['folder'] = (ARGV[1].nil? ? 'data' : ARGV[1].to_s);
+    ARGV[0].nil? ? (print "URL => "; URL = gets.chop.split(',')) : (URL = ARGV[0].split(','));
+    URL =~ /^(?<http>!.*http|https:\/\/).*$/i ? $~[:http] += $` : nil }
+
+# --sort, -p: files numerically in increasing order
+def sort; ->(i) {->(_) {Dir[$_=(_.nil? ? "." : _) + "/*"].each {|f| f.to_enum(:scan, /(?<type>\.(png|jpg|jpeg|gif|webm|mp4|pdf))$/im). \
+        map {p f;$_=f; test(?e, ($_) + i.to_s + $1) ? next : File.rename(f, File.dirname(f) + File::SEPARATOR + (i += 1).to_s + $~[:type])}}} \
+        ::(ENV['folder'])}.(0) end
 
 class Integer
     def to_filesize
@@ -46,15 +68,6 @@ class Integer
     end
 end
 
-puts %{
-        ███╗   ██╗ ██████╗ ██╗  ██╗
-        ████╗  ██║██╔═══██╗╚██╗██╔╝
-        ██╔██╗ ██║██║   ██║ ╚███╔╝ 
-        ██║╚██╗██║██║   ██║ ██╔██╗ 
-        ██║ ╚████║╚██████╔╝██╔╝ ██╗
-        ╚═╝  ╚═══╝ ╚═════╝ ╚═╝  ╚═╝
-}.purple
-
 ARGS = {}
 ARGV.each do |flags|
     case flags
@@ -63,17 +76,6 @@ ARGV.each do |flags|
         when '-i', '--ignore'   then ARGS[:exlude] = true
     end
 end
-
-# get input, create folder 'data' if not specified
-BEGIN { require 'fileutils'
-        FileUtils::mkdir_p ENV['folder'] = (ARGV[1].nil? ? 'data' : ARGV[1].to_s);
-        ARGV[0].nil? ? (print "URL => "; URL = gets.chop.split(',')) : (URL = ARGV[0].split(','));
-        URL =~ /^(?<http>!.*http|https:\/\/).*$/i ? $~[:http] += $` : nil }
-
-# --sort, -p: files numerically in increasing order
-def sort; ->(i) {->(_) {Dir[$_=(_.nil? ? "." : _) + "/*"].each {|f| f.to_enum(:scan, /(?<type>\.(png|jpg|jpeg|gif|webm|mp4|pdf))$/im). \
-        map {p f;$_=f; test(?e, ($_) + i.to_s + $1) ? next : File.rename(f, File.dirname(f) + File::SEPARATOR + (i += 1).to_s + $~[:type])}}} \
-        ::(ENV['folder'])}.(0) end
 
 def help
 print <<HELP
@@ -86,20 +88,21 @@ print <<HELP
 HELP
 end
 
-# -- ignore: ignore certain file extensions
+# -- ignore: file extensions
 def ignore(*ext)
 
 end
 
 help   if ARGS[:help]
-sort   if ARGS[:sort]
 ignore if ARGS[:ignore]
 
-connected = false
-time = Time.now
-downloaded = 0
-retries = 0
+# nonconstant variables
 dl_size = []
+retries = 0
+downloaded = 0
+total_size = 0
+time = Time.now
+connected = false
 
 trap("SIGINT") { throw :ctrl_c }
 
@@ -116,12 +119,13 @@ catch :ctrl_c do
                     "User-Agent" => "Ruby/#{RUBY_VERSION}", 
                     :ssl_verify_mode => OpenSSL::SSL::VERIFY_NONE, 
                     :allow_redirections => :all)).xpath(
-                    "//a[@class='fileThumb']",
-                    "//p[@class='fileinfo']/a",
-                    "//a[@class='imgLink']",
-                    "//td[@class='reply']/a[3]",
-                    "//div[@class='post_content_inner']/div",
-                    "//div[@class='post-image']/a")
+                        "//a[@class='fileThumb']",
+                        "//p[@class='fileinfo']/a",
+                        "//a[@class='imgLink']",
+                        "//div[@class='post']//a[@target='_blank']",
+                        "//td[@class='reply']/a[3]",
+                        "//div[@class='post_content_inner']/div",
+                        "//div[@class='post-image']/a")
 
                 document.each_with_index do |data, i|
 
@@ -130,23 +134,26 @@ catch :ctrl_c do
                     connected   = true
                     downloaded += 1
                     dl_size    << response['content-length'].to_i
-                    progressbar = ProgressBar.create(
-                    :format         => "%a %b\u{15E7}%i %p%% %t",
-                    :progress_mark  => ' ',
-                    :remainder_mark => "\u{FF65}")
+                    # progressbar = ProgressBar.create(
+                    # :format         => "%a %b\u{15E7}%i %p%% %t",
+                    # :progress_mark  => ' ',
+                    # :remainder_mark => "\u{FF65}")
 
                     puts "[#{(i+=1).to_s.blue}/#{document.length.to_s.blue}" \
-                         "#{" - #{Thread.current}" if URL.size > 1}] " \
+                         "#{" - #{URI.parse(url).path.split('/')[-3..-1]*?/}" if URL.size > 1}] " \
                          "[#{(response['content-length'].to_i.to_filesize).to_s.green}/#{response['content-type']}] " \
                          "[#{File.basename(uri).to_s.blue}] " \
                          "-> #{__dir__ + "/" + (ENV['folder']).to_s.blue}"
 
                     begin
                         Timeout::timeout(120) do
-                            File.open(ENV['folder'] + File::SEPARATOR + File.basename(uri), 'wb') do |f|
-                                f.write(open(uri).read)
-                                100.times {progressbar.increment; sleep 0.005}
-                                next if File.file?(f)
+                            if test(?e, ENV['folder'] + "/" + File.basename(uri).to_s) == false
+                                File.open(ENV['folder'] + File::SEPARATOR + File.basename(uri), 'wb') do |f|
+                                    f.write(open(uri).read)
+                                    # 100.times {progressbar.increment; sleep 0.002}
+                                end
+                            else
+                                next
                             end
                         end
                     rescue TimeoutError
@@ -173,7 +180,19 @@ catch :ctrl_c do
     raise "Couldn't connect to the URL :(" unless connected
 end
 
-at_exit { $! ? (warn "Oops, something happened :(") \
-        : (connected ? (puts "\n=TOTAL=\n"; puts "Downloaded: " + (dl_size.inject(:+).to_filesize).to_s.green + " (#{downloaded} files)";
-        puts "Folder (#{ENV['folder']}) size: " + (file_count = Dir["#{ENV['folder']}/*"].length).to_s unless downloaded == file_count) \
-        : (abort "Unknown error, type --help.")) }
+at_exit do
+    if $!
+        warn "Oops, something happened :("
+    else
+        Dir["#{ENV['folder']}/*"].each { |f| total_size += File.size(f) }
+        sort if ARGS[:sort]
+
+        if connected
+            puts "\n=TOTAL=\n"
+            puts "Downloaded: " + (dl_size.inject(:+).to_filesize).to_s.green + " (#{downloaded} files)"
+            puts "Folder (#{ENV['folder']}) now has: " + total_size.to_filesize.to_s.green + " (#{(Dir["#{ENV['folder']}/*"].length)} files)" unless dl_size.inject(:+) == total_size
+        else
+            abort "Unkown error, type --help."        
+        end
+    end
+end
