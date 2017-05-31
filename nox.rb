@@ -1,15 +1,6 @@
 #!/usr/bin/env ruby
 # encoding: UTF-8
 
-=begin
-
-TODO: exlude by file size
-TODO: exlude by image dimension
-TODO: add --watch flag to watch for changes on the thread
-TODO: fix progressbar
-
-=end
-
 require 'openssl'
 require 'open-uri'
 require 'net/http'
@@ -49,12 +40,12 @@ BEGIN {
     # get input, create folder 'data' if not specified
     FileUtils::mkdir_p ENV['folder'] = (ARGV[1].nil? ? 'data' : ARGV[1].to_s);
     ARGV[0].nil? ? (print "URL => "; URL = gets.chop.split(',')) : (URL = ARGV[0].split(','));
-    URL =~ /^(?<http>!.*http|https:\/\/).*$/i ? $~[:http] += $` : nil }
+    URL =~ /^(?<http>!.*http|https:\/\/).*$/i ? $~[:http] += $` : nil if ARGV[0] !~ /^\-+/}
 
 # --sort, -p: files numerically in increasing order
-def sort; ->(i) {->(_) {Dir[$_=(_.nil? ? "." : _) + "/*"].each {|f| f.to_enum(:scan, /(?<type>\.(png|jpg|jpeg|gif|webm|mp4|pdf))$/im). \
+def sort; at_exit { ->(i) {->(_) {Dir[$_=(_.nil? ? "." : _) + "/*"].each {|f| f.to_enum(:scan, /(?<type>\.(png|jpg|jpeg|gif|webm|mp4|pdf))$/im). \
         map {p f;$_=f; test(?e, ($_) + i.to_s + $1) ? next : File.rename(f, File.dirname(f) + File::SEPARATOR + (i += 1).to_s + $~[:type])}}} \
-        ::(ENV['folder'])}.(0) end
+        ::(ENV['folder'])}.(0); puts "Done!".green } end
 
 class Integer
     def to_filesize
@@ -79,19 +70,18 @@ end
 
 def help
 print <<HELP
-        ruby reaper.rb <folder> <options>
+        ruby nox.rb <url>,<url> <folder> <options>
 
         OPTIONS: 
         -h, --help          Shows this help
         -s, --sort          Sort files in inscreasing order
         -i, --ignore        Ignore specific file extension
 HELP
+abort
 end
 
 # -- ignore: file extensions
-def ignore(*ext)
-
-end
+def ignore(*ext); end
 
 help   if ARGS[:help]
 ignore if ARGS[:ignore]
@@ -138,6 +128,7 @@ catch :ctrl_c do
                     # :format         => "%a %b\u{15E7}%i %p%% %t",
                     # :progress_mark  => ' ',
                     # :remainder_mark => "\u{FF65}")
+                    # 100.times {progressbar.increment; sleep 0.002}
 
                     puts "[#{(i+=1).to_s.blue}/#{document.length.to_s.blue}" \
                          "#{" - #{URI.parse(url).path.split('/')[-3..-1]*?/}" if URL.size > 1}] " \
@@ -147,14 +138,9 @@ catch :ctrl_c do
 
                     begin
                         Timeout::timeout(120) do
-                            if test(?e, ENV['folder'] + "/" + File.basename(uri).to_s) == false
-                                File.open(ENV['folder'] + File::SEPARATOR + File.basename(uri), 'wb') do |f|
-                                    f.write(open(uri).read)
-                                    # 100.times {progressbar.increment; sleep 0.002}
-                                end
-                            else
-                                next
-                            end
+                            test(?e, ENV['folder'] + "/" + File.basename(uri).to_s) == false ?
+                                File.open(ENV['folder'] + File::SEPARATOR + File.basename(uri), 'wb') { |f| f.write(open(uri).read) }
+                            : next
                         end
                     rescue TimeoutError
                         puts "¯\\_(ツ)_/¯ shitty internet speed or very large file".red
@@ -162,18 +148,25 @@ catch :ctrl_c do
                 end
             end
         end.each(&:join)
-    rescue OpenURI::HTTPError => e
+    rescue OpenURI::HTTPError => e # fetching real domain address
         res = e.io
-        if res.status[0] == '403'
-            warn "Attempt to bypass Cloudflare"
-            fetch = /(?:\d+\.){3}(?:\d+)(?::\d*)/.match(Net::HTTP.post_form(URI("http://www.crimeflare.com/cgi-bin/cfsearch.cgi"), 'cfS' => URL).body)
-            fetch.nil? ? (puts "Could not bypass protection :(") : (URL = fetch; retry)
-            puts fetch
-        end
-    rescue Exception => e
-        puts e
+
+        (res.status[0] == '403') ?
+            (warn "Attempt to bypass Cloudflare..") &&
+
+            (fetch = /(?:\d+\.){3}(?:\d+)(?::\d*)/.match(
+                Net::HTTP.post_form(URI("http://www.crimeflare.com/cgi-bin/cfsearch.cgi"), 
+                'cfS' => URL).body)) &&
+
+            (fetch.nil? || fetch.empty?) ?
+                (puts "Could not bypass protection :(")
+            : (URL = fetch && (retry))
+        : nil
+    rescue Exception # bypassing ssl certificate file
         warn "Bypassing SSL verification...".red
+
         OpenSSL::SSL::VERIFY_PEER = OpenSSL::SSL::VERIFY_NONE
+
         retries += 1
         retry if retries <= 2
     end
@@ -190,7 +183,9 @@ at_exit do
         if connected
             puts "\n=TOTAL=\n"
             puts "Downloaded: " + (dl_size.inject(:+).to_filesize).to_s.green + " (#{downloaded} files)"
-            puts "Folder (#{ENV['folder']}) now has: " + total_size.to_filesize.to_s.green + " (#{(Dir["#{ENV['folder']}/*"].length)} files)" unless dl_size.inject(:+) == total_size
+
+            puts "Folder (#{ENV['folder']}) now has: " + total_size.to_filesize.to_s.green
+             + " (#{(Dir["#{ENV['folder']}/*"].length)} files)" unless dl_size.inject(:+) == total_size
         else
             abort "Unkown error, type --help."        
         end
