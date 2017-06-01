@@ -40,12 +40,26 @@ BEGIN {
     # get input, create folder 'data' if not specified
     FileUtils::mkdir_p ENV['folder'] = (ARGV[1].nil? ? 'data' : ARGV[1].to_s);
     ARGV[0].nil? ? (print "URL => "; URL = gets.chop.split(',')) : (URL = ARGV[0].split(','));
-    URL =~ /^(?<http>!.*http|https:\/\/).*$/i ? $~[:http] += $` : nil if ARGV[0] !~ /^\-+/}
+    URL =~ /^(?<http>!.*http|https:\/\/).*$/i ? $~[:http] += $` : nil if ARGV[0] !~ /^\-+/ }
 
 # --sort, -p: files numerically in increasing order
 def sort; at_exit { ->(i) {->(_) {Dir[$_=(_.nil? ? "." : _) + "/*"].each {|f| f.to_enum(:scan, /(?<type>\.(png|jpg|jpeg|gif|webm|mp4|pdf))$/im). \
         map {p f;$_=f; test(?e, ($_) + i.to_s + $1) ? next : File.rename(f, File.dirname(f) + File::SEPARATOR + (i += 1).to_s + $~[:type])}}} \
         ::(ENV['folder'])}.(0); puts "Done!".green } end
+
+def help
+    abort %{
+            ruby nox.rb <url>,<url> <folder> <options>
+
+            OPTIONS: 
+            -h, --help          Shows this help
+            -s, --sort          Sort files in inscreasing order
+            -i, --ignore        Ignore specific file extension
+    }
+end
+
+# -- ignore: file extensions
+def ignore(*ext); end
 
 class Integer
     def to_filesize
@@ -59,29 +73,24 @@ class Integer
     end
 end
 
-ARGS = {}
-ARGV.each do |flags|
-    case flags
-        when '-h', '--help'     then ARGS[:help]   = true
-        when '-s', '--sort'     then ARGS[:sort]   = true
-        when '-i', '--ignore'   then ARGS[:exlude] = true
+module Kernel
+    def silence_warnings
+        original_verbosity = $VERBOSE
+        $VERBOSE = nil
+        result = yield
+        $VERBOSE = original_verbosity
+        return result
     end
 end
 
-def help
-print <<HELP
-        ruby nox.rb <url>,<url> <folder> <options>
-
-        OPTIONS: 
-        -h, --help          Shows this help
-        -s, --sort          Sort files in inscreasing order
-        -i, --ignore        Ignore specific file extension
-HELP
-abort
+ARGS = {}
+ARGV.each do |flags|
+    case flags
+        when '-h', '--help'     then ARGS[:help]    = true
+        when '-s', '--sort'     then ARGS[:sort]    = true
+        when '-i', '--ignore'   then ARGS[:exlude]  = true
+    end
 end
-
-# -- ignore: file extensions
-def ignore(*ext); end
 
 help   if ARGS[:help]
 ignore if ARGS[:ignore]
@@ -96,8 +105,7 @@ connected = false
 
 trap("SIGINT") { throw :ctrl_c }
 
-catch :ctrl_c do  
-
+catch :ctrl_c do
     puts "Connecting to URL.. ".green
     puts "Press ctrl-c to stop".green
     puts "\n\n"
@@ -106,8 +114,8 @@ catch :ctrl_c do
         URL.map do |url|
             Thread.new do
                 document = Nokogiri::HTML(open(URI.encode(url),
-                    "User-Agent" => "Ruby/#{RUBY_VERSION}", 
-                    :ssl_verify_mode => OpenSSL::SSL::VERIFY_NONE, 
+                    "User-Agent" => "Ruby/#{RUBY_VERSION}",
+                    :ssl_verify_mode => OpenSSL::SSL::VERIFY_NONE,
                     :allow_redirections => :all)).xpath(
                         "//a[@class='fileThumb']",
                         "//p[@class='fileinfo']/a",
@@ -118,23 +126,14 @@ catch :ctrl_c do
                         "//div[@class='post-image']/a")
 
                 document.each_with_index do |data, i|
-
                     uri         = URI.join(url, URI.escape((data['href'] || data['src']))).to_s
                     response    = Net::HTTP.get_response(URI.parse(uri))
                     connected   = true
                     downloaded += 1
                     dl_size    << response['content-length'].to_i
-                    # progressbar = ProgressBar.create(
-                    # :format         => "%a %b\u{15E7}%i %p%% %t",
-                    # :progress_mark  => ' ',
-                    # :remainder_mark => "\u{FF65}")
-                    # 100.times {progressbar.increment; sleep 0.002}
 
-                    puts "[#{(i+=1).to_s.blue}/#{document.length.to_s.blue}" \
-                         "#{" - #{URI.parse(url).path.split('/')[-3..-1]*?/}" if URL.size > 1}] " \
-                         "[#{(response['content-length'].to_i.to_filesize).to_s.green}/#{response['content-type']}] " \
-                         "[#{File.basename(uri).to_s.blue}] " \
-                         "-> #{__dir__ + "/" + (ENV['folder']).to_s.blue}"
+                    puts "[%s/%s%s] [%s/%s] [%s] -> %s" % [(-~i).to_s.blue, document.length.to_s.blue, (" - " + (URI.parse(url).path.split('/')[-3..-1]) if URL.size > 1).to_s,
+                        (response['content-length'].to_i.to_filesize).to_s.green, response['content-type'], File.basename(uri).to_s.blue, (__dir__ + "/" + (ENV['folder']).to_s.blue)]
 
                     begin
                         Timeout::timeout(120) do
@@ -162,15 +161,15 @@ catch :ctrl_c do
                 (puts "Could not bypass protection :(")
             : (URL = fetch && (retry))
         : nil
-    rescue Exception # bypassing ssl certificate file
-        warn "Bypassing SSL verification...".red
+    rescue OpenSSL::SSL::SSLError # bypassing invalid ssl certificate
+        warn "Bypassing SSL verification...".blue
 
-        OpenSSL::SSL::VERIFY_PEER = OpenSSL::SSL::VERIFY_NONE
+        silence_warnings { OpenSSL::SSL::VERIFY_PEER = OpenSSL::SSL::VERIFY_NONE }
 
         retries += 1
         retry if retries <= 2
     end
-    raise "Couldn't connect to the URL :(" unless connected
+    abort "Couldn't connect to the URL :(".red unless connected
 end
 
 at_exit do
@@ -182,10 +181,8 @@ at_exit do
 
         if connected
             puts "\n=TOTAL=\n"
-            puts "Downloaded: " + (dl_size.inject(:+).to_filesize).to_s.green + " (#{downloaded} files)"
-
-            puts "Folder (#{ENV['folder']}) now has: " + total_size.to_filesize.to_s.green
-             + " (#{(Dir["#{ENV['folder']}/*"].length)} files)" unless dl_size.inject(:+) == total_size
+            puts "Downloaded: %s (%s files)" % [(dl_size.inject(:+).to_filesize).to_s.green, downloaded]
+            puts "Folder (%s) now has: %s (%s files)" % [ENV['folder'], total_size.to_filesize.to_s.green, Dir[ENV['folder'] + "/*"].length] unless dl_size.inject(:+) == total_size
         else
             abort "Unkown error, type --help."        
         end
