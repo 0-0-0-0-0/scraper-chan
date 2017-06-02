@@ -16,6 +16,28 @@ require 'timeout'
     end
 end
 
+class Integer
+    def to_filesize
+        {
+            'B'  => 1024,
+            'KB' => 1024 * 1024,
+            'MB' => 1024 * 1024 * 1024,
+            'GB' => 1024 * 1024 * 1024 * 1024,
+            'TB' => 1024 * 1024 * 1024 * 1024 * 1024
+        }.each_pair { |e, s| return "#{(self.to_f / (s / 1024)).round(2)}#{e}" if self < s }
+    end
+end
+
+module Kernel
+    def silence_warnings
+        original_verbosity = $VERBOSE
+        $VERBOSE = nil
+        result = yield
+        $VERBOSE = original_verbosity
+        return result
+    end
+end
+
 BEGIN {
     require 'fileutils'
 
@@ -38,9 +60,9 @@ BEGIN {
     }.purple
 
     # get input, create folder 'data' if not specified
-    FileUtils::mkdir_p ENV['folder'] = (ARGV[1].nil? ? 'data' : ARGV[1].to_s);
-    ARGV[0].nil? ? (print "URL => "; URL = gets.chop.split(',')) : (URL = ARGV[0].split(','));
-    URL =~ /^(?<http>!.*http|https:\/\/).*$/i ? $~[:http] += $` : nil if ARGV[0] !~ /^\-+/ }
+    (FileUtils::mkdir_p ENV['folder'] = (ARGV[1].nil? ? 'data' : ARGV[1].to_s)) &&
+    (ARGV[0].nil? ? (print "URL => "; URL = gets.chop.split(',')) : (URL = ARGV[0].split(','))) &&
+    (URL =~ /^(?<http>!.*http|https:\/\/).*$/i ? $~[:http] += $` : nil) if ARGV[0] !~ /^\-+/ }
 
 # --sort, -p: files numerically in increasing order
 def sort; at_exit { ->(i) {->(_) {Dir[$_=(_.nil? ? "." : _) + "/*"].each {|f| f.to_enum(:scan, /(?<type>\.(png|jpg|jpeg|gif|webm|mp4|pdf))$/im). \
@@ -60,28 +82,6 @@ end
 
 # -- ignore: file extensions
 def ignore(*ext); end
-
-class Integer
-    def to_filesize
-        {
-            'B'  => 1024,
-            'KB' => 1024 * 1024,
-            'MB' => 1024 * 1024 * 1024,
-            'GB' => 1024 * 1024 * 1024 * 1024,
-            'TB' => 1024 * 1024 * 1024 * 1024 * 1024
-        }.each_pair { |e, s| return "#{(self.to_f / (s / 1024)).round(2)}#{e}" if self < s }
-    end
-end
-
-module Kernel
-    def silence_warnings
-        original_verbosity = $VERBOSE
-        $VERBOSE = nil
-        result = yield
-        $VERBOSE = original_verbosity
-        return result
-    end
-end
 
 ARGS = {}
 ARGV.each do |flags|
@@ -138,7 +138,7 @@ catch :ctrl_c do
                     begin
                         Timeout::timeout(120) do
                             test(?e, ENV['folder'] + "/" + File.basename(uri).to_s) == false ?
-                                File.open(ENV['folder'] + File::SEPARATOR + File.basename(uri), 'wb') { |f| f.write(open(uri).read) }
+                                File.open(ENV['folder'] + File::SEPARATOR + File.basename(uri), 'wb') { |f| f << open(uri).read }
                             : next
                         end
                     rescue TimeoutError
