@@ -38,6 +38,15 @@ module Kernel
     end
 end
 
+ARGS = {}
+ARGV.each do |flags|
+    case flags
+        when '-h', '--help'     then ARGS[:help]    = true
+        when '-s', '--sort'     then ARGS[:sort]    = true
+        when '-i', '--ignore'   then ARGS[:exlude]  = true
+    end
+end
+
 BEGIN {
     require 'fileutils'
 
@@ -65,9 +74,10 @@ BEGIN {
     (URL =~ /^(?<http>!.*http|https:\/\/).*$/i ? $~[:http] += $` : nil) if ARGV[0] !~ /^\-+/ }
 
 # --sort, -p: files numerically in increasing order
-def sort; at_exit { ->(i) {->(_) {Dir[$_=(_.nil? ? "." : _) + "/*"].each {|f| f.to_enum(:scan, /(?<type>\.(png|jpg|jpeg|gif|webm|mp4|pdf))$/im). \
-        map {p f;$_=f; test(?e, ($_) + i.to_s + $1) ? next : File.rename(f, File.dirname(f) + File::SEPARATOR + (i += 1).to_s + $~[:type])}}} \
-        ::(ENV['folder'])}.(0); puts "Done!".green } end
+at_exit { ->(i) {->(_) {Dir[$_=(_.nil? ? '.' : _) + '/*'].each_with_index {|f,i| f.to_enum(:scan, /(?<type>\.(png|jpg|jpeg|gif|webm|mp4|pdf))$/im). \
+    map {p "Sorting - [#{-~i}/#{Dir["#{_}/*"].length}] "+f;$_=f; test(?e, ($_) + i.to_s + $1) ? next : \
+    File.rename(f, File.dirname(f) + File::SEPARATOR + (-~i).to_s + $~[:type])}}}::(ENV['folder'])}.(0) && (puts 'Done!') \
+    rescue Errno::EACCES abort "NO ACCESS - Can't sort this folder :(" } if ARGS[:sort]
 
 def help
     abort %{
@@ -83,25 +93,16 @@ end
 # -- ignore: file extensions
 def ignore(*ext); end
 
-ARGS = {}
-ARGV.each do |flags|
-    case flags
-        when '-h', '--help'     then ARGS[:help]    = true
-        when '-s', '--sort'     then ARGS[:sort]    = true
-        when '-i', '--ignore'   then ARGS[:exlude]  = true
-    end
-end
-
 help   if ARGS[:help]
 ignore if ARGS[:ignore]
 
 # nonconstant variables
-dl_size = []
-retries = 0
+time       = Time.now
+dl_size    = []
+total_size = 
+retries    =
 downloaded = 0
-total_size = 0
-time = Time.now
-connected = false
+connected  = false
 
 trap("SIGINT") { throw :ctrl_c }
 
@@ -132,7 +133,7 @@ catch :ctrl_c do
                     downloaded += 1
                     dl_size    << response['content-length'].to_i
 
-                    puts "[%s/%s%s] [%s/%s] [%s] -> %s" % [(-~i).to_s.blue, document.length.to_s.blue, (" - " + (URI.parse(url).path.split('/')[-3..-1]) if URL.size > 1).to_s,
+                    puts "[%s/%s%s] [%s/%s] [%s] -> %s" % [(-~i).to_s.blue, document.length.to_s.blue, (" - " + (URI.parse(url).path.split('/')[-3..-1]*?/) if URL.size > 1).to_s,
                         (response['content-length'].to_i.to_filesize).to_s.green, response['content-type'], File.basename(uri).to_s.blue, (__dir__ + "/" + (ENV['folder']).to_s.blue)]
 
                     begin
@@ -177,7 +178,6 @@ at_exit do
         warn "Oops, something happened :("
     else
         Dir["#{ENV['folder']}/*"].each { |f| total_size += File.size(f) }
-        sort if ARGS[:sort]
 
         if connected
             puts "\n=TOTAL=\n"
