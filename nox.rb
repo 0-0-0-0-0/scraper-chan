@@ -115,8 +115,8 @@ catch :ctrl_c do
         URL.map do |url|
             Thread.new do
                 document = Nokogiri::HTML(open(URI.encode(url),
-                    "User-Agent" => "Ruby/#{RUBY_VERSION}",
-                    :ssl_verify_mode => OpenSSL::SSL::VERIFY_NONE,
+                    "User-Agent"        => "Ruby/#{RUBY_VERSION}",
+                    :ssl_verify_mode    => OpenSSL::SSL::VERIFY_NONE,
                     :allow_redirections => :all)).xpath(
                         "//a[@class='fileThumb']",
                         "//p[@class='fileinfo']/a",
@@ -133,7 +133,7 @@ catch :ctrl_c do
                     downloaded += 1
                     dl_size    << response['content-length'].to_i
 
-                    puts "[%s/%s%s] [%s/%s] [%s] -> %s" % [(-~i).to_s.blue, document.length.to_s.blue, (" - " + (URI.parse(url).path.split('/')[-3..-1]*?/) if URL.size > 1).to_s,
+                    $> << "[%s/%s%s] [%s/%s] [%s] -> %s\n" % [(-~i).to_s.blue, document.length.to_s.blue, (" - " + (URI.parse(url).path.split('/')[-3..-1]*?/) if URL.size > 1).to_s,
                         (response['content-length'].to_i.to_filesize).to_s.green, response['content-type'], File.basename(uri).to_s.blue, (__dir__ + "/" + (ENV['folder']).to_s.blue)]
 
                     begin
