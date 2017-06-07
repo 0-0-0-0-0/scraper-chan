@@ -146,7 +146,7 @@ catch :ctrl_c do
 
                     begin
                         Timeout::timeout(120) do
-                            test(?e, ENV['folder'] + "/" + File.basename(uri).to_s) == false ?
+                            !test(?e, ENV['folder'] + "/" + File.basename(uri).to_s) ?
                                 File.open(ENV['folder'] + File::SEPARATOR + File.basename(uri), 'wb') { |f| f << open(uri).read }
                             : next
                         end
@@ -186,11 +186,12 @@ at_exit do
         warn "Oops, something happened :("
     else
         Dir["#{ENV['folder']}/*"].each { |f| total_size += File.size(f) }
+        download_size = dl_size.inject(:+)
 
         if connected
             puts "\n=TOTAL=\n"
-            puts "Downloaded: %s (%s files)" % [(dl_size.inject(:+).to_filesize).to_s.green, downloaded]
-            puts "Folder (%s) now has: %s (%s files)" % [ENV['folder'], total_size.to_filesize.to_s.green, Dir[ENV['folder'] + "/*"].length] unless dl_size.inject(:+) == total_size
+            puts "Downloaded: %s (%s files)" % [(download_size.to_filesize).to_s.green, downloaded]
+            puts "Folder (%s) now has: %s (%s files)" % [ENV['folder'], total_size.to_filesize.to_s.green, Dir[ENV['folder'] + "/*"].length] unless download_size == total_size
         else
             abort "Unkown error, type --help."        
         end
