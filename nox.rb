@@ -1,6 +1,14 @@
 #!/usr/bin/env ruby
 # encoding: UTF-8
 
+=begin
+
+todo: fix progressbar
+todo: add *booru support
+todo: add --exclude option
+
+=end
+
 require 'openssl'
 require 'open-uri'
 require 'net/http'
