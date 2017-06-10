@@ -32,54 +32,54 @@ class Integer
       'MB' => 1024 * 1024 * 1024,
       'GB' => 1024 * 1024 * 1024 * 1024,
       'TB' => 1024 * 1024 * 1024 * 1024 * 1024
-      }.each_pair { |e, s| return "#{(self.to_f / (s / 1024)).round(2)}#{e}" if self < s }
-    end
+    }.each_pair { |e, s| return "#{(self.to_f / (s / 1024)).round(2)}#{e}" if self < s }
+  end
+end
+
+module Kernel
+  def silence_warnings
+    original_verbosity = $VERBOSE
+    $VERBOSE = nil
+    result = yield
+    $VERBOSE = original_verbosity
+    return result
+  end
+end
+
+ARGS = {}
+ARGV.each do |flags|
+  case flags
+  when '-h', '--help'     then ARGS[:help]    = true
+  when '-s', '--sort'     then ARGS[:sort]    = true
+  when '-i', '--ignore'   then ARGS[:exlude]  = true
+  end
+end
+
+BEGIN {
+  require 'fileutils'
+
+  system "title nox"
+
+  class String
+    def red;            "\e[31m#{self}\e[0m" end
+    def blue;           "\e[34m#{self}\e[0m" end
+    def green;          "\e[32m#{self}\e[0m" end
+    def purple;         "\e[35m#{self}\e[0m" end
   end
 
-  module Kernel
-    def silence_warnings
-      original_verbosity = $VERBOSE
-      $VERBOSE = nil
-      result = yield
-      $VERBOSE = original_verbosity
-      return result
-    end
-  end
+  puts %{
+    ███████╗ ██████╗██████╗  █████╗ ██████╗ ███████╗██████╗ 
+    ██╔════╝██╔════╝██╔══██╗██╔══██╗██╔══██╗██╔════╝██╔══██╗
+    ███████╗██║     ██████╔╝███████║██████╔╝█████╗  ██████╔╝
+    ╚════██║██║     ██╔══██╗██╔══██║██╔═══╝ ██╔══╝  ██╔══██╗
+    ███████║╚██████╗██║  ██║██║  ██║██║     ███████╗██║  ██║
+    ╚══════╝ ╚═════╝╚═╝  ╚═╝╚═╝  ╚═╝╚═╝     ╚══════╝╚═╝  ╚═╝
+    }.purple
 
-  ARGS = {}
-  ARGV.each do |flags|
-    case flags
-    when '-h', '--help'     then ARGS[:help]    = true
-    when '-s', '--sort'     then ARGS[:sort]    = true
-    when '-i', '--ignore'   then ARGS[:exlude]  = true
-    end
-  end
-
-  BEGIN {
-    require 'fileutils'
-
-    system "title nox"
-
-    class String
-      def red;            "\e[31m#{self}\e[0m" end
-      def blue;           "\e[34m#{self}\e[0m" end
-      def green;          "\e[32m#{self}\e[0m" end
-      def purple;         "\e[35m#{self}\e[0m" end
-    end
-
-    puts %{
-      ███████╗ ██████╗██████╗  █████╗ ██████╗ ███████╗██████╗ 
-      ██╔════╝██╔════╝██╔══██╗██╔══██╗██╔══██╗██╔════╝██╔══██╗
-      ███████╗██║     ██████╔╝███████║██████╔╝█████╗  ██████╔╝
-      ╚════██║██║     ██╔══██╗██╔══██║██╔═══╝ ██╔══╝  ██╔══██╗
-      ███████║╚██████╗██║  ██║██║  ██║██║     ███████╗██║  ██║
-      ╚══════╝ ╚═════╝╚═╝  ╚═╝╚═╝  ╚═╝╚═╝     ╚══════╝╚═╝  ╚═╝
-      }.purple
-
-    # get input, create folder 'data' if not specified
-    (FileUtils::mkdir_p ENV['folder'] = (ARGV[1].nil? ? 'data' : ARGV[1].to_s)) &&
-    (ARGV[0].nil? ? (print "URL => "; URL = gets.chop.split(',')) : (URL = ARGV[0].split(','))) &&
-    (URL =~ /^(?<http>!.*http|https:\/\/).*$/i ? $~[:http] += $` : nil) if ARGV[0] !~ /^\-+/ }
+  # get input, create folder 'data' if not specified
+  (FileUtils::mkdir_p ENV['folder'] = (ARGV[1].nil? ? 'data' : ARGV[1].to_s)) &&
+  (ARGV[0].nil? ? (print "URL => "; URL = gets.chop.split(',')) : (URL = ARGV[0].split(','))) &&
+  (URL =~ /^(?<http>!.*http|https:\/\/).*$/i ? $~[:http] += $` : nil) if ARGV[0] !~ /^\-+/ }
 
 # --sort, -p: files numerically in increasing order
 at_exit { ->(i) {->(_) {Dir[$_=(_.nil? ? '.' : _) + '/*'].each_with_index {|f,i| f.to_enum(:scan, /(?<type>\.(png|jpg|jpeg|gif|webm|mp4|pdf))$/im). \
@@ -177,7 +177,7 @@ catch :ctrl_c do
       retries += 1
       retry if retries <= 2
     end
-    abort "Couldn't connect to the URL :(".red unless connected
+  abort "Couldn't connect to the URL :(".red unless connected
 end
 
 at_exit do
