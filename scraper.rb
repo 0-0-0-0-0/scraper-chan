@@ -76,9 +76,9 @@ BEGIN {
     ╚══════╝ ╚═════╝╚═╝  ╚═╝╚═╝  ╚═╝╚═╝     ╚══════╝╚═╝  ╚═╝
     }.purple
 
-  # get input, create folder 'data' if not specified
-  (FileUtils::mkdir_p ENV['folder'] = (ARGV[1].nil? ? 'data' : ARGV[1].to_s)) &&
-  (ARGV[0].nil? ? (print "URL => "; URL = gets.chop.split(',')) : (URL = ARGV[0].split(','))) &&
+  # get input, create folder
+  (FileUtils::mkdir_p ENV['folder'] = (ARGV[1].nil? ? ARGV[0].split('/')[-1] : ARGV[1].to_s)) &&
+  (ARGV[0].nil? ? (print "URL => "; URL = gets.chop.split(/[\s,]+/m)) : (URL = ARGV[0].split(','))) &&
   (URL =~ /^(?<http>!.*http|https:\/\/).*$/i ? $~[:http] += $` : nil) if ARGV[0] !~ /^\-+/ }
 
 # --sort, -p: files numerically in increasing order
@@ -129,6 +129,7 @@ catch :ctrl_c do
           "//a[@class='fileThumb']",
           "//p[@class='fileinfo']/a",
           "//a[@class='imgLink']",
+          "//div[@class='main-body']//a",
           "//div[@class='post']//a[@target='_blank']",
           "//td[@class='reply']/a[3]",
           "//div[@class='post_content_inner']/div",
@@ -141,7 +142,7 @@ catch :ctrl_c do
             downloaded += 1
             dl_size    << response['content-length'].to_i
 
-            $> << "[%s/%s%s] [%s/%s] [%s] -> %s\n" % [(-~i).to_s.blue, document.length.to_s.blue, (" - " + (URI.parse(url).path.split('/')[-3..-1]*?/) if URL.size > 1).to_s,
+            $> << "[%s/%s%s] [%s/%s] [%s] -> %s\n" % [(-~i).to_s.blue, document.length.to_s.blue, (" - " + (URI.parse(url).path.split('/')[-1]) if URL.size > 1).to_s,
               (response['content-length'].to_i.to_filesize).to_s.green, response['content-type'], File.basename(uri).to_s.blue, (__dir__ + "/" + (ENV['folder']).to_s.blue)]
 
             begin
@@ -169,6 +170,8 @@ catch :ctrl_c do
           retry
         end
       end
+    rescue SocketError, Errno::EINVAL
+      next
     rescue OpenSSL::SSL::SSLError # bypassing invalid ssl certificate
       warn "Bypassing SSL verification...".blue
 
