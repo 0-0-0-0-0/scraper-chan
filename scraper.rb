@@ -1,26 +1,25 @@
 #!/usr/bin/env ruby
 # encoding: UTF-8
 
-=begin
-
-todo: fix progressbar
-todo: add *booru support
-todo: add --exclude option
-
-=end
-
 require 'openssl'
 require 'open-uri'
+require 'fileutils'
 require 'net/http'
-require 'timeout'
 
-%w{nokogiri open_uri_redirections progressbar}.each do |lib|
+%w{nokogiri open_uri_redirections}.each do |lib|
   begin
     require lib
   rescue LoadError
-    system "gem install #{lib}"
-    Gem.clear_paths
-    retry
+    puts "A few gems are missing, install dependencies? [Y/n]: "
+    confirm = gets.chomp
+
+    if confirm[/[y]|\r|\n/im]
+      system "gem install #{lib}"
+      Gem.clear_paths
+      retry
+    else
+      abort "Goodbye."
+    end
   end
 end
 
@@ -51,151 +50,191 @@ ARGV.each do |flags|
   case flags
   when '-h', '--help'     then ARGS[:help]    = true
   when '-s', '--sort'     then ARGS[:sort]    = true
-  when '-i', '--ignore'   then ARGS[:exlude]  = true
+  when '-t', '--strict'   then ARGS[:strict]  = true
   end
 end
 
 BEGIN {
   require 'fileutils'
 
-  system "title nox"
+  system "title scraper-chan"
 
   class String
     def red;            "\e[31m#{self}\e[0m" end
     def blue;           "\e[34m#{self}\e[0m" end
     def green;          "\e[32m#{self}\e[0m" end
     def purple;         "\e[35m#{self}\e[0m" end
+    def bg_magenta;     "\e[45m#{self}\e[0m" end
   end
 
-  puts %{
-    ███████╗ ██████╗██████╗  █████╗ ██████╗ ███████╗██████╗ 
-    ██╔════╝██╔════╝██╔══██╗██╔══██╗██╔══██╗██╔════╝██╔══██╗
-    ███████╗██║     ██████╔╝███████║██████╔╝█████╗  ██████╔╝
-    ╚════██║██║     ██╔══██╗██╔══██║██╔═══╝ ██╔══╝  ██╔══██╗
-    ███████║╚██████╗██║  ██║██║  ██║██║     ███████╗██║  ██║
-    ╚══════╝ ╚═════╝╚═╝  ╚═╝╚═╝  ╚═╝╚═╝     ╚══════╝╚═╝  ╚═╝
-    }.purple
+  %{
+      ███████╗ ██████╗██████╗  █████╗ ██████╗ ███████╗██████╗ 
+      ██╔════╝██╔════╝██╔══██╗██╔══██╗██╔══██╗██╔════╝██╔══██╗
+      ███████╗██║     ██████╔╝███████║██████╔╝█████╗  ██████╔╝
+      ╚════██║██║     ██╔══██╗██╔══██║██╔═══╝ ██╔══╝  ██╔══██╗
+      ███████║╚██████╗██║  ██║██║  ██║██║     ███████╗██║  ██║
+      ╚══════╝ ╚═════╝╚═╝  ╚═╝╚═╝  ╚═╝╚═╝     ╚══════╝╚═╝  ╚═╝
+  }.chars.map { |line| print "\e[#{rand(31..35)}m#{line}\e[0m"; $stdout.flush; sleep 0.003 }
 
-  # get input, create folder
-  (FileUtils::mkdir_p ENV['folder'] = (ARGV[1].nil? ? ARGV[0].split('/')[-1] : ARGV[1].to_s)) &&
-  (ARGV[0].nil? ? (print "URL => "; URL = gets.chop.split(/[\s,]+/m)) : (URL = ARGV[0].split(','))) &&
-  (URL =~ /^(?<http>!.*http|https:\/\/).*$/i ? $~[:http] += $` : nil) if ARGV[0] !~ /^\-+/ }
+  exit if defined? Ocra
+  abort "Usage: ruby scraper.rb <urls> <folder> <options>".red if ARGV[0].nil?
 
-# --sort, -p: files numerically in increasing order
-at_exit { ->(i) {->(_) {Dir[$_=(_.nil? ? '.' : _) + '/*'].each_with_index {|f,i| f.to_enum(:scan, /(?<type>\.(png|jpg|jpeg|gif|webm|mp4|pdf))$/im). \
-  map {p "Sorting - [#{-~i}/#{Dir["#{_}/*"].length}] "+f;$_=f; test(?e, ($_) + i.to_s + $1) ? next : \
-  File.rename(f, File.dirname(f) + File::SEPARATOR + (-~i).to_s + $~[:type])}}}::(ENV['folder'])}.(0) && (puts 'Done!') \
-  rescue Errno::EACCES abort "NO ACCESS - Can't sort this folder :(" } if ARGS[:sort]
+  FileUtils::mkdir_p ENV['folder'] = ARGV[1] || ARGV[0].split('/')[-1]
+  URL = ARGV[0].split(',')
+  URL =~ /^(?<http>!.*http|https:\/\/).*$/i ? $~[:http] += $` : nil if ARGV[0] !~ /^\-+/
+}
+
+at_exit {
+  ->i {
+    ->_ {
+      Dir[$_=(_.nil? ? '.' : _) + '/*'].each_with_index { |f, i|
+        f.to_enum(:scan, /(?<type>\.(png|jpg|jpeg|gif|webm|mp4|pdf))$/im).map {
+          p "Sorting - [#{-~i}/#{Dir["#{_}/*"].length}] " + f; $_=f;
+          test(?e, ($_) + i.to_s + $1) ? next : \
+
+          File.rename(f, File.dirname(f) + File::SEPARATOR + (-~i).to_s + $~[:type])
+        }
+      }
+    }::(ENV['folder'])
+  }.(0) && (puts 'Done!') rescue Errno::EACCES abort "NO ACCESS - Can't sort this folder :("
+} if ARGS[:sort]
 
 def help
   abort %{
-    ruby spider.rb <url>,<url> <folder> <options>
+      ruby scraper.rb <url>,<url> <folder> <options>
 
-    OPTIONS: 
-    -h, --help          Shows this help
-    -s, --sort          Sort files in inscreasing order
-    -i, --ignore        Ignore specific file extension
+      OPTIONS: 
+      -h, --help          Shows this help
+      -s, --sort          Sort files in inscreasing order
+      -t, --strict        Ensures well-formed markup
   }
 end
 
-# -- ignore: file extensions
-def ignore(*ext); end
+def warning(str)
+  warn "#{"[!]".red} #{str}"
+end
 
 help   if ARGS[:help]
 ignore if ARGS[:ignore]
 
-# nonconstant variables
-time       = Time.now
 dl_size    = []
 total_size = 
 retries    =
+count      =
 downloaded = 0
 connected  = false
-
+started    = Time.now
+  
 trap("SIGINT") { throw :ctrl_c }
 
 catch :ctrl_c do
-  puts "Connecting to URL.. ".green
-  puts "Press ctrl-c to stop".green
-  puts "\n\n"
-
   begin
     URL.map do |url|
+      puts "\nConnecting to (#{url.green})\n"
       Thread.new do
-        document = Nokogiri::HTML(open(URI.encode(url),
+        document = Nokogiri::HTML(open(URI(URI.encode(url)),
           "User-Agent"        => "Ruby/#{RUBY_VERSION}",
           :ssl_verify_mode    => OpenSSL::SSL::VERIFY_NONE,
           :allow_redirections => :all)).xpath(
+          "//a[@class='imgLink']",
           "//a[@class='fileThumb']",
           "//p[@class='fileinfo']/a",
-          "//a[@class='imgLink']",
-          "//div[@class='main-body']//a",
-          "//div[@class='post']//a[@target='_blank']",
           "//td[@class='reply']/a[3]",
+          "//div[@class='post-image']/a",
+          "//div[@class='main-body']//a",
+          "//div[@class='post-body']//p/img",
+          "//a[@class='thread_image_link']",
+          "//a[@class='prettyPhoto_gall']",
           "//div[@class='post_content_inner']/div",
-          "//div[@class='post-image']/a")
+          "//div[@id='postcontent']//a[starts-with(@href, '//images.')]",
+          "//div[@class='entry-content']//p/a",
+          "//div[@class='ngg-gallery-thumbnail']/a",
+          "//div[@class='icon-overlay']/a/img",
+          "//div[@class='entry']//p/a",
+          "//div[@id='post-content']//p/img",
+          "//div[@class='post']//a[@target='_blank']") { |config| config.strict if ARGS[:strict] }
 
-          document.each_with_index do |data, i|
-            uri         = URI.join(url, URI.escape((data['href'] || data['src']))).to_s
-            response    = Net::HTTP.get_response(URI.parse(uri))
-            connected   = true
-            downloaded += 1
-            dl_size    << response['content-length'].to_i
+          document.map.with_index do |data, i|
+            Thread.new do
+              uri         = URI.join(url, URI.escape((data['href'] || data['src']))).to_s
+              response    = Net::HTTP.get_response(URI.parse(uri))
+              doc_path    = ENV['folder'] + File::SEPARATOR + File.basename(uri).to_s
+              connected   = true
+              downloaded += 1
+              dl_size    << response['content-length'].to_i
 
-            $> << "[%s/%s%s] [%s/%s] [%s] -> %s\n" % [(-~i).to_s.blue, document.length.to_s.blue, (" - " + (URI.parse(url).path.split('/')[-1]) if URL.size > 1).to_s,
-              (response['content-length'].to_i.to_filesize).to_s.green, response['content-type'], File.basename(uri).to_s.blue, (__dir__ + "/" + (ENV['folder']).to_s.blue)]
+              $> << "(%s) [%s/%s%s] [%s/%s] [%s] » %s\n" % [
+                (((response['content-type'] =~ /\/text\/html/i || response['content-length'] == 0) ? '- '.red : '+ '.green) + (count+=1).to_s),
+                (-~i).to_s.blue, document.length.to_s.blue,
+                (" - " + (URI.parse(url).path.split('/')[-1]) if URL.size > 1).to_s,
+                (response['content-length'].to_i.to_filesize).to_s.green, response['content-type'], File.basename(uri).to_s.bg_magenta, ((ENV['folder']).to_s.blue)
+              ]
 
-            begin
-              Timeout::timeout(120) do
-                !test(?e, ENV['folder'] + "/" + File.basename(uri).to_s) ?
-                File.open(ENV['folder'] + File::SEPARATOR + File.basename(uri), 'wb') { |f| f << open(uri).read }
-                : next
-              end
-            rescue TimeoutError
-              puts "¯\\_(ツ)_/¯ shitty internet speed or very large file".red
+              !test(?e, doc_path) \
+              ? File.open(doc_path, 'wb') { |f| f << open(uri).read }
+              : Thread.exit
             end
-          end
+          end.each(&:join)
         end
       end.each(&:join)
-    rescue OpenURI::HTTPError => e # fetching real domain address
+    rescue OpenURI::HTTPError => e
       res = e.io
       if res.status[0] == '403'
-        warn "Attempt to bypass Cloudflare"
+        warning "Attempt to bypass Cloudflare"
 
         fetch = /(?:\d+\.){3}(?:\d+)(?::\d*)/.match(Net::HTTP.post_form(URI("http://www.crimeflare.com/cgi-bin/cfsearch.cgi"), 'cfS' => URL).body)
 
         if fetch.nil? || fetch.empty?
-          puts "Could not bypass protection :("
+          warning "Could not bypass protection :("
           URL = fetch
           retry
         end
       end
-    rescue SocketError, Errno::EINVAL
+    rescue SocketError, Errno::EINVAL, Errno::ECONNRESET, Errno::ETIMEDOUT, Net::ReadTimeout
       next
-    rescue OpenSSL::SSL::SSLError # bypassing invalid ssl certificate
-      warn "Bypassing SSL verification...".blue
-
+    rescue OpenSSL::SSL::SSLError
+      warning "Bypassing SSL verification..."
       silence_warnings { OpenSSL::SSL::VERIFY_PEER = OpenSSL::SSL::VERIFY_NONE }
-
       retries += 1
       retry if retries <= 2
-    end
+  end
   abort "Couldn't connect to the URL :(".red unless connected
 end
 
 at_exit do
+  empty_files = 0
   if $!
-    warn "Oops, something happened :("
+    warning "Oops, something happened :("
   else
-    Dir["#{ENV['folder']}/*"].each { |f| total_size += File.size(f) }
+    Dir["#{ENV['folder']}/*"].each do |f|
+      if !File.zero?(f)
+        total_size += File.size(f)
+      else
+        begin
+          puts "#{"[-] DEL".red} #{(f.to_s).blue} [#{File.size(f).to_filesize.to_s.green}]"
+          FileUtils::rm(f)
+          empty_files += 1
+        rescue Errno::EACCES
+          next
+        end
+      end
+    end
     download_size = dl_size.inject(:+)
+    warning "Removed #{empty_files} empty files." unless empty_files == 0
+ 
+    FileUtils::mkdir_p('logs') if !Dir.exists?('logs')
+    File.open("logs/log #{Time.now.strftime("(%Y-%m-%d) [%Hh-%Mmin]")}.txt", 'w+') { |log|
+      URL.map { |site| log << "WEBSITE: #{site}\n" }
+      log << "TOTAL: #{downloaded} files [#{download_size.to_filesize}] >> #{ENV['folder']}"
+    }
 
+    duration = (started - Time.now)
     if connected
-      puts "\n=TOTAL=\n"
+      puts "\nTook: #{(Time.at(duration.round.abs).utc.strftime("%H:%M:%S")).blue} to finish"
       puts "Downloaded: %s (%s files)" % [(download_size.to_filesize).to_s.green, downloaded]
       puts "Folder (%s) now has: %s (%s files)" % [ENV['folder'], total_size.to_filesize.to_s.green, Dir[ENV['folder'] + "/*"].length] unless download_size == total_size
     else
-      abort "Unkown error, type --help."        
+      abort "Unknown error, type --help."
     end
   end
 end
