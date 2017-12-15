@@ -68,7 +68,7 @@ BEGIN {
   end
 
   %{
-      ███████╗ ██████╗██████╗  █████╗ ██████╗ ███████╗██████╗ 
+      ███████╗ ██████╗██████╗  █████╗ ██████╗ ███████╗██████╗
       ██╔════╝██╔════╝██╔══██╗██╔══██╗██╔══██╗██╔════╝██╔══██╗
       ███████╗██║     ██████╔╝███████║██████╔╝█████╗  ██████╔╝
       ╚════██║██║     ██╔══██╗██╔══██║██╔═══╝ ██╔══╝  ██╔══██╗
@@ -103,7 +103,7 @@ def help
   abort %{
       ruby scraper.rb <url>,<url> <folder> <options>
 
-      OPTIONS: 
+      OPTIONS:
       -h, --help          Shows this help
       -s, --sort          Sort files in inscreasing order
       -t, --strict        Ensures well-formed markup
@@ -118,13 +118,13 @@ help   if ARGS[:help]
 ignore if ARGS[:ignore]
 
 dl_size    = []
-total_size = 
+total_size =
 retries    =
 count      =
 downloaded = 0
 connected  = false
 started    = Time.now
-  
+
 trap("SIGINT") { throw :ctrl_c }
 
 catch :ctrl_c do
@@ -161,14 +161,20 @@ catch :ctrl_c do
               doc_path    = ENV['folder'] + File::SEPARATOR + File.basename(uri).to_s
               connected   = true
               downloaded += 1
+              is_html     = response['content-type'][/\/text\/html/i]
               dl_size    << response['content-length'].to_i
 
               $> << "(%s) [%s/%s%s] [%s/%s] [%s] » %s\n" % [
-                (((response['content-type'] =~ /\/text\/html/i || response['content-length'] == 0) ? '- '.red : '+ '.green) + (count+=1).to_s),
+                (((is_html || response['content-length'] == 0) ? '- '.red : '+ '.green) + (count+=1).to_s),
                 (-~i).to_s.blue, document.length.to_s.blue,
                 (" - " + (URI.parse(url).path.split('/')[-1]) if URL.size > 1).to_s,
-                (response['content-length'].to_i.to_filesize).to_s.green, response['content-type'], File.basename(uri).to_s.bg_magenta, ((ENV['folder']).to_s.blue)
+                (response['content-length'].to_i.to_filesize).to_s.green,
+                response['content-type'],
+                File.basename(uri).to_s.bg_magenta,
+                ((ENV['folder']).to_s.blue)
               ]
+
+              next if is_html
 
               !test(?e, doc_path) \
               ? File.open(doc_path, 'wb') { |f| f << open(uri).read }
@@ -221,7 +227,7 @@ at_exit do
     end
     download_size = dl_size.inject(:+)
     warning "Removed #{empty_files} empty files." unless empty_files == 0
- 
+
     FileUtils::mkdir_p('logs') if !Dir.exists?('logs')
     File.open("logs/log #{Time.now.strftime("(%Y-%m-%d) [%Hh-%Mmin]")}.txt", 'w+') { |log|
       URL.map { |site| log << "WEBSITE: #{site}\n" }
